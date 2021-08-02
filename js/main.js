@@ -409,6 +409,7 @@ function export_robot() {
     robot.compile_dv();
     let json_string = JSON.stringify(robot.dv);
     console.log(json_string);
+    alert(json_string);
 }
 
 ////////////////////////////////////////////////////////////////////////
