@@ -338,7 +338,7 @@ function update_dropdown_lists() {
     let robot_leg = robot.leg(leg_id_e.selectedIndex);
 
     // Num Links
-    num_links_e.selectedIndex = robot_leg.num_links;
+    num_links_e.selectedIndex = robot_leg.num_links - 1;
 
     // Link ID
     resize_select(link_id_e, robot_leg.num_links);
