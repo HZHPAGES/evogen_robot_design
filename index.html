@@ -9,12 +9,7 @@
 
     <!-- JS Libraries -->
     <script src="js/lib/three.min.js"></script>
-    <!-- <script src="js/lib/physi.js"></script> -->
-    <!-- <script src="js/lib/ammo.js"></script> -->
-    <!-- <script src="js/lib/physijs_worker.js"></script> -->
     <script src="js/lib/TrackballControls.js"></script>
-    <!-- <script src="js/lib/LineColorTable.js"></script> -->
-    <!-- <script src="js/lib/STLLoader.js"></script> -->
     <script src="js/lib/OBJLoader.js"></script>
 </head>
 
@@ -22,12 +17,31 @@
     <div id="RobotConfigPanel">
         <p align="center">Robot Config</p>
         <p>
+            Name:
+            <input class="LongTextBox" id="RobotNameText">
+        </p>
+        <p>
             Num Legs:
             <select class="SelectList" id="NumLegsSelect"></select>
         </p>
         <p>
             Body ID:
             <select class="SelectList" id="BodyIdSelect"></select>
+        </p>
+        <p>
+            Body Scale X:
+            <input class="TextBox" id="BodyScaleXText">
+            <input type="range" id="BodyScaleXRange">
+        </p>
+        <p>
+            Body Scale Y:
+            <input class="TextBox" id="BodyScaleYText">
+            <input type="range" id="BodyScaleYRange">
+        </p>
+        <p>
+            Body Scale Z:
+            <input class="TextBox" id="BodyScaleZText">
+            <input type="range" id="BodyScaleZRange">
         </p>
         <p>
             Leg ID:
@@ -52,7 +66,10 @@
             <input type="range" id="LinkLengthRange">
         </p>
         <p>
-            <button type="input" id="submitButton">Submit</button>
+            <button type="input" id="SubmitButton">Submit</button>
+        </p>
+        <p>
+            <button type="input" id="SaveButton">Save</button>
         </p>
     </div>
 

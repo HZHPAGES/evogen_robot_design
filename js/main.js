@@ -4,17 +4,24 @@
 //                             Constants                              //
 ////////////////////////////////////////////////////////////////////////
 
-const allowed_num_legs = [4, 6];
+const allowed_num_legs = [2, 3, 4, 5, 6];
+const min_num_links_per_leg = 2;
 const max_num_links_per_leg = 3;
 const leg_pos_range = [0, 1];
+const body_scale_range = [0.5, 1.5];
 const link_length_range = [0.5, 1.5];
 const slider_step = 0.01;
-const init_leg_position = [0.01, 0.99, 0.49, 0.51, 0.25, 0.75];
 
+var preset_leg_pos = {};
+preset_leg_pos["2"] = [0.25, 0.75];
+preset_leg_pos["3"] = [0.01, 0.75, 0.49];
+preset_leg_pos["4"] = [0.01, 0.49, 0.51, 0.99];
+preset_leg_pos["5"] = [0.01, 0.49, 0.51, 0.99, 0.25];
+preset_leg_pos["6"] = [0.01, 0.25, 0.49, 0.51, 0.75, 0.99];
 
 // TODO: the following 4 values should be read from disk
 const num_body_parts = 5;
-const num_leg_parts = 11;
+const num_leg_parts = 7;
 
 ////////////////////////////////////////////////////////////////////////
 //                               Class                                //
@@ -28,9 +35,9 @@ class RobotLink {
 }
 
 class RobotLeg {
-    constructor(init_pos = 0) {
-        this.position = init_pos;
-        this.num_links = 1;
+    constructor() {
+        this.position = 0;
+        this.num_links = min_num_links_per_leg;
         this.links = [];
         // define an array of 3 links
         for (let i = 0; i < max_num_links_per_leg; ++i)
@@ -43,39 +50,29 @@ class RobotLeg {
         else
             console.log("Error: link idx exceeds total number of links");
     }
+
+    update_position(leg_id, total_num_legs) {
+        this.position = preset_leg_pos[total_num_legs.toString()][leg_id];
+    }
 }
 
 class RobotRepresentation {
     constructor() {
         this.body_id = 0;
-        this.leg_order = ["FL", "FR", "BL", "BR", "ML", "MR"];
+        this.body_scales = [1, 1, 1];
         this.name = "Robogami_Temp";
         this.num_legs = 4;
-        // leg order: FL FR BL BR ML MR
+        // leg order: FL ML BL BR MR FR
         this.legs = [];
+        // add enough containers for maximum number of legs and this legs array
+        //     will not be resized later
         for (let i = 0; i < allowed_num_legs[allowed_num_legs.length - 1]; ++i)
-            this.legs.push(new RobotLeg(init_leg_position[i]));
+            this.legs.push(new RobotLeg());
+        // init as a valid robot
+        for (let i = 0; i < this.num_legs; ++i)
+            this.legs[i].update_position(i, this.num_legs);
         this.dv = [];
     }
-
-    // leg(name) {
-        // switch (name) {
-        // case "FL":
-            // return this.legs[0];
-        // case "FR":
-            // return this.legs[1];
-        // case "BL":
-            // return this.legs[2];
-        // case "BR":
-            // return this.legs[3];
-        // case "ML":
-            // return this.legs[4];
-        // case "MR":
-            // return this.legs[5];
-        // default:
-            // return undefined;
-        // }
-    // }
 
     leg(idx) {
         if (idx < this.num_legs)
@@ -84,26 +81,42 @@ class RobotRepresentation {
             console.log("Error: leg idx exceeds total number of legs");
     }
 
-    sort_legs() {
-    // TODO: reorder legs based on their leg_pos
+    update_num_legs(new_num_legs) {
+        this.num_legs = new_num_legs;
+        for (let i = 0; i < this.num_legs; ++i) {
+            this.legs[i].update_position(i, this.num_legs);
+        }
     }
 
+    // map a number of range [min, max] to a double in [0, 1]
+    scale_down(raw, min, max) {
+        return (raw - min) / (max - min);
+    }
+
+    // gen format: [body_id, body_x, body_y, body_z, num_legs, leg_1, leg_2, ...]
+    //     for each leg: [leg_pos, num_links, link_1_id, link_1_scale]
     compile_dv() {
         this.dv.length = 0;
-        this.dv.push(this.body_id);
-        this.dv.push(1); // body_x
-        this.dv.push(1); // body_y
-        this.dv.push(1); // body_z
-        this.dv.push(this.num_legs);
+        this.dv.push(this.scale_down(this.body_id, 0, num_body_parts - 1));
+        for (let i = 0; i < robot.body_scales.length; ++i) // body scales
+            this.dv.push(this.scale_down(robot.body_scales[i], body_scale_range[0], body_scale_range[1]));
+        this.dv.push(this.scale_down(this.num_legs, allowed_num_legs[0], allowed_num_legs[allowed_num_legs.length - 1]));
         for (let i = 0; i < this.num_legs; ++i) {
             let this_leg = this.leg(i);
-            this.dv.push(this_leg.position);
-            this.dv.push(this_leg.num_links);
+            // this.dv.push(this_leg.position); // temp disable leg_pos
+            this.dv.push(this.scale_down(this_leg.num_links, min_num_links_per_leg, max_num_links_per_leg));
             for (let j = 0; j < this_leg.num_links; ++j) {
-                this.dv.push(this_leg.link(j).part_id);
-                this.dv.push(this_leg.link(j).link_length);
+                this.dv.push(this.scale_down(this_leg.link(j).part_id, 0, num_leg_parts - 1));
+                this.dv.push(this.scale_down(this_leg.link(j).link_length, link_length_range[0], link_length_range[1]));
             }
         }
+    }
+
+    export_json() {
+        this.compile_dv();
+        let robot_json = {name: this.name, gene: this.dv};
+        // this long command formats the generated json string and keeps array on the same line
+        return JSON.stringify(robot_json, function(k,v) { if(v instanceof Array) return JSON.stringify(v); return v; }, 2).replace(/\\/g, '') .replace(/\"\[/g, '[') .replace(/\]\"/g,']') .replace(/\"\{/g, '{') .replace(/\}\"/g,'}');
     }
 }
 
@@ -129,9 +142,9 @@ class RobogamiLibrary {
 
         let loader = new THREE.OBJLoader();
         for (let i = 0; i < num_body_parts; ++i)
-            loader.load('./models/bodies/' + i + '.obj', function (obj) {self.bodies[i] = obj;});
+            loader.load('./robot_parts/bodies/' + i + '.obj', function (obj) {self.bodies[i] = obj;});
         for (let i = 0; i < num_leg_parts; ++i)
-            loader.load('./models/legs/' + i + '.obj', function (obj) {self.legs[i] = obj});
+            loader.load('./robot_parts/legs/' + i + '.obj', function (obj) {self.legs[i] = obj});
     }
 
     post_load_processing() {
@@ -142,20 +155,15 @@ class RobogamiLibrary {
             this.bodies[i].traverse(update_helper);
             let bbox = new THREE.Box3().setFromObject(this.bodies[i]);
             this.body_size[i] = new THREE.Vector3();
-            bbox.getSize(this.body_size[i]);;
-            // console.log(this.body_size[i]);
+            bbox.getSize(this.body_size[i]);
         }
 
         for (let i = 0; i < num_leg_parts; ++i) {
             let obj = this.legs[i];
-            obj.scale.x = 4;
-            obj.scale.y = 4;
-            obj.scale.z = 5;
             obj.traverse(update_helper);
             let bbox = new THREE.Box3().setFromObject(obj);
             this.leg_size[i] = new THREE.Vector3();
-            bbox.getSize(this.leg_size[i]);;
-            // console.log(this.leg_size[i]);
+            bbox.getSize(this.leg_size[i]);
         }
     }
 }
@@ -164,7 +172,14 @@ class RobogamiLibrary {
 //                            DOM Handles                             //
 ////////////////////////////////////////////////////////////////////////
 
+let robot_name_e   = document.getElementById('RobotNameText');
 let body_id_e      = document.getElementById('BodyIdSelect');
+let body_x_e       = document.getElementById('BodyScaleXText');
+let body_x2_e      = document.getElementById('BodyScaleXRange');
+let body_y_e       = document.getElementById('BodyScaleYText');
+let body_y2_e      = document.getElementById('BodyScaleYRange');
+let body_z_e       = document.getElementById('BodyScaleZText');
+let body_z2_e      = document.getElementById('BodyScaleZRange');
 let num_legs_e     = document.getElementById('NumLegsSelect');
 let leg_id_e       = document.getElementById('LegIdSelect');
 let leg_pos_e      = document.getElementById('LegPositionText');
@@ -174,7 +189,8 @@ let link_id_e      = document.getElementById('LinkIdSelect');
 let part_id_e      = document.getElementById('PartIdSelect');
 let link_length_e  = document.getElementById('LinkLengthText');
 let link_length2_e = document.getElementById('LinkLengthRange');
-let submit_e       = document.getElementById('submitButton');
+let submit_e       = document.getElementById('SubmitButton');
+let save_e         = document.getElementById('SaveButton');
 
 ////////////////////////////////////////////////////////////////////////
 //                             Callbacks                              //
@@ -188,15 +204,62 @@ function onWindowResize(event) {
     camera.updateProjectionMatrix();
 }
 
+function onRobotNameTextChange(event) {
+    var select = event.target;
+    robot.name = select.value;
+}
+
 function onBodyIdSelectChange(event) {
     var select = event.target;
     robot.body_id = parseInt(select.value);
     draw_robot();
 }
 
+function onBodyScaleXTextChange(event) {
+    var select = event.target;
+    robot.body_scales[0] = parseFloat(select.value);
+    body_x2_e.value = select.value;
+    draw_robot();
+}
+
+function onBodyScaleXRangeChange(event) {
+    var select = event.target;
+    robot.body_scales[0] = parseFloat(select.value);
+    body_x_e.value = select.value;
+    draw_robot();
+}
+
+function onBodyScaleYTextChange(event) {
+    var select = event.target;
+    robot.body_scales[1] = parseFloat(select.value);
+    body_y2_e.value = select.value;
+    draw_robot();
+}
+
+function onBodyScaleYRangeChange(event) {
+    var select = event.target;
+    robot.body_scales[1] = parseFloat(select.value);
+    body_y_e.value = select.value;
+    draw_robot();
+}
+
+function onBodyScaleZTextChange(event) {
+    var select = event.target;
+    robot.body_scales[2] = parseFloat(select.value);
+    body_z2_e.value = select.value;
+    draw_robot();
+}
+
+function onBodyScaleZRangeChange(event) {
+    var select = event.target;
+    robot.body_scales[2] = parseFloat(select.value);
+    body_z_e.value = select.value;
+    draw_robot();
+}
+
 function onNumLegsSelectChange(event) {
     var select = event.target;
-    robot.num_legs = parseInt(select.value);
+    robot.update_num_legs(parseInt(select.value))
     update_dropdown_lists();
     draw_robot();
 }
@@ -255,6 +318,10 @@ function onSubmitButtonClick(event) {
     export_robot();
 }
 
+function onSaveButtonClick(event) {
+    demo_write();
+}
+
 ////////////////////////////////////////////////////////////////////////
 //                            Subfunctions                            //
 ////////////////////////////////////////////////////////////////////////
@@ -278,6 +345,10 @@ function resize_select(select, new_size) {
 }
 
 function init_dropdown_lists() {
+    // Robot Name
+    robot_name_e.value = robot.name;
+    robot_name_e.addEventListener('change', onRobotNameTextChange);
+
     // Num Legs
     for (let i = 0; i < allowed_num_legs.length; ++i) {
         var opt = document.createElement('option');
@@ -285,13 +356,14 @@ function init_dropdown_lists() {
         opt.innerHTML = allowed_num_legs[i];
         num_legs_e.appendChild(opt);
     }
+    num_legs_e.value = robot.num_legs.toString();
     num_legs_e.addEventListener('change', onNumLegsSelectChange);
 
     // Num Links
-    for (let i = 0; i < max_num_links_per_leg; ++i) {
+    for (let i = min_num_links_per_leg; i < max_num_links_per_leg + 1; ++i) {
         var opt = document.createElement('option');
-        opt.value = i + 1;
-        opt.innerHTML = i + 1;
+        opt.value = i;
+        opt.innerHTML = i;
         num_links_e.appendChild(opt);
     }
     num_links_e.addEventListener('change', onNumLinksSelectChange);
@@ -299,6 +371,31 @@ function init_dropdown_lists() {
     // Body ID
     resize_select(body_id_e, num_body_parts);
     body_id_e.addEventListener('change', onBodyIdSelectChange);
+
+    // Body Scale
+    body_x_e.addEventListener('change', onBodyScaleXTextChange);
+    body_x2_e.addEventListener('change', onBodyScaleXRangeChange);
+    body_x2_e.min = body_scale_range[0];
+    body_x2_e.max = body_scale_range[1];
+    body_x2_e.step = slider_step;
+    body_x_e.value = robot.body_scales[0];
+    body_x2_e.value = robot.body_scales[0];
+
+    body_y_e.addEventListener('change', onBodyScaleYTextChange);
+    body_y2_e.addEventListener('change', onBodyScaleYRangeChange);
+    body_y2_e.min = body_scale_range[0];
+    body_y2_e.max = body_scale_range[1];
+    body_y2_e.step = slider_step;
+    body_y_e.value = robot.body_scales[1];
+    body_y2_e.value = robot.body_scales[1];
+
+    body_z_e.addEventListener('change', onBodyScaleZTextChange);
+    body_z2_e.addEventListener('change', onBodyScaleZRangeChange);
+    body_z2_e.min = body_scale_range[0];
+    body_z2_e.max = body_scale_range[1];
+    body_z2_e.step = slider_step;
+    body_z_e.value = robot.body_scales[2];
+    body_z2_e.value = robot.body_scales[2];
 
     // Leg ID
     resize_select(leg_id_e, robot.num_legs);
@@ -329,6 +426,9 @@ function init_dropdown_lists() {
     // Submit Button
     submit_e.addEventListener('click', onSubmitButtonClick)
 
+    // Save Button
+    save_e.addEventListener('click', onSaveButtonClick)
+
     update_dropdown_lists();
 }
 
@@ -338,7 +438,7 @@ function update_dropdown_lists() {
     let robot_leg = robot.leg(leg_id_e.selectedIndex);
 
     // Num Links
-    num_links_e.selectedIndex = robot_leg.num_links - 1;
+    num_links_e.value = robot_leg.num_links;
 
     // Link ID
     resize_select(link_id_e, robot_leg.num_links);
@@ -364,12 +464,16 @@ function draw_robot() {
     scene.clear();
     // Add body
     let body_obj = robo_lib.bodies[robot.body_id].clone();
+    body_obj.scale.x *= robot.body_scales[0];
+    body_obj.scale.y *= robot.body_scales[1];
+    body_obj.scale.z *= robot.body_scales[2];
     scene.add(body_obj);
-    let body_size = robo_lib.body_size[robot.body_id];
+    let body_size = robo_lib.body_size[robot.body_id].clone();
+    body_size.x *= robot.body_scales[0];
+    body_size.y *= robot.body_scales[1];
+    body_size.z *= robot.body_scales[2];
 
     // Add legs
-    // TODO: make sure the leg position is respected
-    // first figure out the relative pos
     let leg_pos_x = 0;
     let leg_pos_y = 0;
     let leg_pos_gene = 0;
@@ -407,9 +511,27 @@ function render() {
 
 function export_robot() {
     robot.compile_dv();
-    let json_string = JSON.stringify(robot.dv);
-    console.log(json_string);
-    alert(json_string);
+    console.log(robot.dv);
+    alert(robot.dv);
+}
+
+function twodigit_str(n) {
+    return n > 9 ? "" + n : "0" + n;
+}
+
+function demo_write() {
+    let date = new Date();
+    let timestamp = date.getFullYear().toString() +
+                    twodigit_str((date.getMonth()+1)) +
+                    twodigit_str(date.getDate()) + "_" +
+                    twodigit_str(date.getHours()) +
+                    twodigit_str(date.getMinutes()) +
+                    twodigit_str(date.getSeconds());
+
+    let anchor = document.createElement('a');
+    anchor.href = "data:application/octet-stream,"+encodeURIComponent(robot.export_json());
+    anchor.download = robot.name + "_" + timestamp + '.txt';
+    anchor.click();
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -437,7 +559,7 @@ controls.rotateSpeed = 1;
 controls.zoomSpeed = 0.1;
 controls.panSpeed = 0.2;
 
-/* Lights setup */
+// Lights setup
 scene.add(new THREE.AmbientLight(0xffffff));
 init_dropdown_lists();
 render();
