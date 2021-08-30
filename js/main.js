@@ -23,6 +23,9 @@ preset_leg_pos["6"] = [0.01, 0.25, 0.49, 0.51, 0.75, 0.99];
 const num_body_parts = 5;
 const num_leg_parts = 7;
 
+const unselect_mat = new THREE.MeshBasicMaterial( { color: 0x444444 } );
+const select_mat = new THREE.MeshBasicMaterial( { color: 0xff0000 } );
+let current_selected_obj;
 ////////////////////////////////////////////////////////////////////////
 //                               Class                                //
 ////////////////////////////////////////////////////////////////////////
@@ -31,6 +34,7 @@ class RobotLink {
     constructor() {
         this.part_id = 0;
         this.link_length = 1.0;
+        this.obj;
     }
 }
 
@@ -58,6 +62,7 @@ class RobotLeg {
 
 class RobotRepresentation {
     constructor() {
+        this.body_obj;
         this.body_id = 0;
         this.body_scales = [1, 1, 1];
         this.name = "Robogami_Temp";
@@ -148,8 +153,7 @@ class RobogamiLibrary {
     }
 
     post_load_processing() {
-        const mat_tmp = new THREE.MeshBasicMaterial( { color: 0x444444 } );
-        function update_helper(child) { if (child.isMesh) child.material = mat_tmp; }
+        function update_helper(child) { if (child.isMesh) child.material = unselect_mat; }
         // need to generate the bounding box of each mesh
         for (let i = 0; i < num_body_parts; ++i) {
             this.bodies[i].traverse(update_helper);
@@ -172,6 +176,8 @@ class RobogamiLibrary {
 //                            DOM Handles                             //
 ////////////////////////////////////////////////////////////////////////
 
+let config_panel_e = document.getElementById('RobotConfigPanel');
+let visual_panel_e = document.getElementById('RobotVisualPanel');
 let robot_name_e   = document.getElementById('RobotNameText');
 let body_id_e      = document.getElementById('BodyIdSelect');
 let body_x_e       = document.getElementById('BodyScaleXText');
@@ -197,11 +203,29 @@ let save_e         = document.getElementById('SaveButton');
 ////////////////////////////////////////////////////////////////////////
 
 function onWindowResize(event) {
-    const containerWidth = container.clientWidth;
-    const containerHeight = container.clientHeight;
-    renderer.setSize(containerWidth, containerHeight);
-    camera.aspect = containerWidth / containerHeight;
+    renderer.setSize(visual_panel_e.clientWidth, visual_panel_e.clientHeight);
+    camera.aspect = visual_panel_e.clientWidth / visual_panel_e.clientHeight;
     camera.updateProjectionMatrix();
+}
+
+function onMouseClick(event) {
+    const rect = visual_panel_e.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = - ((event.clientY - rect.top) / rect.height) * 2 + 1;
+    // raycaster
+    raycaster.setFromCamera(mouse, camera);
+    // calculate objects intersecting the picking ray
+    const intersects = raycaster.intersectObjects(scene.children, true);
+    if (intersects.length > 0) {
+        // not sure why, but the obj returned by raycaster is a different obj
+        // than the one passed to scene, and has an id 1 larger than the orig obj
+        const orig_obj = scene.getObjectById(intersects[0].object.id - 1);
+        if (orig_obj && orig_obj.leg_id != null) { // only obj of leg links has this defined
+            leg_id_e.value = orig_obj.leg_id;
+            link_id_e.value = orig_obj.link_id;
+            update_dropdown_lists();
+        }
+    }
 }
 
 function onRobotNameTextChange(event) {
@@ -455,18 +479,32 @@ function update_dropdown_lists() {
     // Leg Position
     leg_pos_e.value = robot_leg.position;
     leg_pos2_e.value = robot_leg.position;
+
+    // Update visualization of selected link part
+    if (robo_lib.loading_done) {
+        mark_body(current_selected_obj, false);
+        current_selected_obj = robot.leg(parseInt(leg_id_e.value)).link(parseInt(link_id_e.value)).obj;
+        mark_body(current_selected_obj, true);
+    }
 }
 
-// TODO: highlight selected link
+// TODO: mesh objs can be reused, do not create a new one everytime
 function draw_robot() {
     if (!robo_lib.loading_done)
         return;
     scene.clear();
+
+    // Display axis
+    const axesHelper = new THREE.AxesHelper(200);
+    axesHelper.material.linewidth = 5;
+    scene.add(axesHelper);
+
     // Add body
     let body_obj = robo_lib.bodies[robot.body_id].clone();
     body_obj.scale.x *= robot.body_scales[0];
     body_obj.scale.y *= robot.body_scales[1];
     body_obj.scale.z *= robot.body_scales[2];
+    robot.body_obj = body_obj;
     scene.add(body_obj);
     let body_size = robo_lib.body_size[robot.body_id].clone();
     body_size.x *= robot.body_scales[0];
@@ -496,11 +534,24 @@ function draw_robot() {
             link_obj.position.x = leg_pos_x;
             link_obj.position.y = leg_pos_y;
             link_obj.position.z = -leg_total_length - link_size_z / 2;
+            link_obj.leg_id = leg_id;
+            link_obj.link_id = i;
+            robot.leg(leg_id).link(i).obj = link_obj;
             scene.add(link_obj);
 
             leg_total_length += link_size_z;
         }
     }
+
+    current_selected_obj = robot.leg(parseInt(leg_id_e.value)).link(parseInt(link_id_e.value)).obj;
+    mark_body(current_selected_obj, true);
+}
+
+function mark_body(body_obj, selected = true) {
+    if (selected)
+        body_obj.traverse(function(child){if (child.isMesh) child.material = select_mat;})
+    else
+        body_obj.traverse(function(child){if (child.isMesh) child.material = unselect_mat;})
 }
 
 function render() {
@@ -540,24 +591,28 @@ function demo_write() {
 var robot = new RobotRepresentation();
 var robo_lib = new RobogamiLibrary();
 
-const container = document.getElementById("RobotVisualPanel");
 const scene = new THREE.Scene();
 scene.rotateOnAxis(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
 const renderer = new THREE.WebGLRenderer({ alpha: true });
-renderer.setSize(container.clientWidth, container.clientHeight);
-container.appendChild(renderer.domElement);
+renderer.setSize(visual_panel_e.clientWidth, visual_panel_e.clientHeight);
+visual_panel_e.appendChild(renderer.domElement);
 window.addEventListener('resize', onWindowResize);
 
-const camera = new THREE.PerspectiveCamera(75, container.clientWidth/container.clientHeight, 0.1, 1000);
-camera.position.x = 0;
-camera.position.y = 40;
-camera.position.z = 300;
+const camera = new THREE.PerspectiveCamera(75, visual_panel_e.clientWidth / visual_panel_e.clientHeight, 0.1, 1000);
+camera.position.x = 200;
+camera.position.y = 100;
+camera.position.z = -300;
 
 // Trackball Control setup
 var controls = new THREE.TrackballControls(camera, renderer.domElement);
 controls.rotateSpeed = 1;
 controls.zoomSpeed = 0.1;
 controls.panSpeed = 0.2;
+
+// Raycaster
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+visual_panel_e.addEventListener('click', onMouseClick, false);
 
 // Lights setup
 scene.add(new THREE.AmbientLight(0xffffff));
