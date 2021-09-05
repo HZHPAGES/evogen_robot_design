@@ -2,14 +2,14 @@
 ## Introduction
 * This user study is going to take around 30 mins per person.
 * Each user is going to design 2 robots per environment.
-    * We expect the 2 robots for the same environment to be as much different to each other as possible
+    * The 2 robots for the same environment are expected to be as much different as possible
     * The robots for different environments could be similar.
 
 ## Design Workflow
 ### Update Robot Name
-* Update the robot name as `Yourname_Mapname_TaskDescription`.
+* Update the robot name as `YourName_MapName_TaskDescription`.
     * E.g. If John is going to design a robot to walk forward on the ground environment,
-        then the name would be `john_ground_walkforward`.
+        the name would be `john_ground_walkforward`.
 
 ### Design Robot
 * **Body**
@@ -19,14 +19,14 @@
 * **Legs**
     * Use `Num_Legs` drop-down list to select different number of legs for the robot.
         * The robot can have 2, 3, 4, 5, or 6 legs
-        * The legs would be attached to the body based on predefined layouts.
-        * For the asymmetrical layouts of 3 or 5 leg robots, use the `Flip Legs`
+        * The legs would be attached to the body according to predefined layouts.
+        * For the asymmetrical layouts of 3- or 5-leg robots, use the `Flip Legs`
             button to flip to mirrored layout. And this button would be ignored for symetrical layouts.
-    * Use `Leg ID` drop-down list to select a target leg to edit.
+    * Use `Leg ID` drop-down list to select a **target leg** to edit.
         * This could also be done by clicking any link of that leg.
-    * Use `# Links` drop-down list to change the number of links for the target leg.
-        * Each leg could either have 2 or 3 links.
-    * Use `Link ID` drop-down list to select a target link of the target leg  to edit.
+    * Use `# Links` drop-down list to change the number of links for the **target leg**.
+        * Each leg could have 2 or 3 links.
+    * Use `Link ID` drop-down list to select a **target link** of the **target leg**  to edit.
         * This could also be done by clicking the link directly. And the selected
             link would be highlighted in red.
     * Use `Part ID` drop-down list to select different meshes for the highlighted link.
