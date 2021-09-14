@@ -14,47 +14,29 @@
 </head>
 
 <body>
-    <div id="RobotConfigPanel">
-        <p><button onclick=" window.open('designer_manual.html','_blank')">Designer Manual</button></p>
-        <div align="center">
-            <p align="center">Meta</p>
+    <div id="RobotConfigPanel" align="center">
+        <div id="MetaPanel" align="center">
             <p>
-                Participant ID: <input class="LongTextBox" id="UserIDText">
-                <button type="input" id="GenUserIDButton">Generate New</button>
+                <button class="button" onclick=" window.open('designer_manual.html','_blank')">Designer Manual</button>
+                <button class="button" onclick=" window.open('user_registration.html','_blank')">New User</button>
             </p>
-            <p>
-                Gender: <select class="SelectList" id="UserGenderSelect">
-                            <option value="0"></option>
-                            <option value="1">M</option>
-                            <option value="2">F</option>
-                        </select>
-                Age: <input class="TextBox" id="UserAgeText">
-            </p>
-            <p>Major: <input class="LongTextBox" id="UserMajorText"></p>
-            <p>Degree: <input class="LongTextBox" id="UserDegreeText"></p>
-            <p>Environment: <select class="SelectList" id="EnvSelect" style="width:90px"></select></p>
+            <p>Participant ID: <input class="TextBox" id="UserIDText" style="width:45px"></p>
         </div>
         <hr>
-
         <div align="center">
-            <p align="center">Robot Config</p>
+            <p>Environment: <select class="select" id="EnvSelect" style="width:90px"></select>
+               Ver: <select class="select" id="VerSelect"></select></p>
+            <p><button class="button" id="ResetButton">Reset</button></p>
             <p>
-                Ver:
-                <select class="SelectList" id="VerSelect">
-                    <option value="0">0</option>
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                </select>
-                Num Legs:
-                <select class="SelectList" id="NumLegsSelect"></select>
-                <button type="input" id="FlipButton">Flip Legs</button>
+                Num Legs: <select class="select" id="NumLegsSelect"></select>
+                <button class="button" id="FlipButton">Flip Legs</button>
             </p>
         </div>
         <hr>
 
         <div align="center">
             <p align="center">Body Config</p>
-            <p>Body ID: <select class="SelectList" id="BodyIdSelect"></select></p>
+            <p>Body ID: <select class="select" id="BodyIdSelect"></select></p>
             <p>
                 Body Scale X:
                 <input class="TextBox" id="BodyScaleXText">
@@ -76,8 +58,8 @@
         <div align="center">
             <p align="center">Target Leg Config</p>
             <p>
-                Leg ID: <select class="SelectList" id="LegIdSelect"></select>
-                # Links: <select class="SelectList" id="NumLinksSelect"></select>
+                Leg ID: <select class="select display_select" id="LegIdSelect"></select>
+                # Links: <select class="select" id="NumLinksSelect"></select>
             </p>
             <!-- <p> -->
                 <!-- Leg Position: -->
@@ -89,18 +71,23 @@
         <div align="center">
             <p align="center">Target Link Config</p>
             <p>
-                Link ID: <select class="SelectList" id="LinkIdSelect"></select>
-                Part ID: <select class="SelectList" id="PartIdSelect"></select>
+                Link ID: <select class="select display_select" id="LinkIdSelect"></select>
+                Part ID: <select class="select" id="PartIdSelect"></select>
             </p>
             <p>
                 Link Scale:
                 <input class="TextBox" id="LinkLengthText">
                 <input type="range" id="LinkLengthRange">
             </p>
+            <p>
+                Copy Leg: <select class="select" id="CopyLegSelect"></select>
+                <button class="button" id="CopyLegButton">Copy Leg</button>
+            </p>
             <hr>
             <p align="center">
-                <button type="input" id="SubmitButton">Test</button>
-                <button type="input" id="SaveButton">Save</button>
+                <button class="button" id="SubmitButton">Show Gene</button>
+                <button class="button" id="SaveButton">Save</button>
+                <button class="button" id="LoadButton">Load</button>
             </p>
         </div>
     </div>

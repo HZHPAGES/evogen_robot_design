@@ -4,6 +4,7 @@
 //                             Constants                              //
 ////////////////////////////////////////////////////////////////////////
 
+const max_ver = 2;
 const allowed_num_legs = [2, 3, 4, 5, 6];
 const min_num_links_per_leg = 2;
 const max_num_links_per_leg = 3;
@@ -22,7 +23,7 @@ preset_leg_pos["5_alt"] = [0.99, 0.51, 0.49, 0.01, 0.75];
 preset_leg_pos["6"] = [0.01, 0.25, 0.49, 0.51, 0.75, 0.99];
 
 // TODO: the following 4 values should be read from disk
-const num_body_parts = 5;
+const num_body_parts = 6;
 const num_leg_parts = 7;
 
 const unselect_mat = new THREE.MeshBasicMaterial( { color: 0x444444 } );
@@ -32,24 +33,6 @@ let current_selected_obj;
 ////////////////////////////////////////////////////////////////////////
 //                               Class                                //
 ////////////////////////////////////////////////////////////////////////
-
-class MetaInfo {
-    constructor() {
-        this.user_id = "";
-        this.user_gender = "";
-        this.user_age = "";
-        this.user_major = "";
-        this.user_degree = "";
-        this.env = "";
-
-        this.generate_user_id();
-    }
-
-    generate_user_id() {
-        let new_id = Math.floor(Math.random() * 1e6); // make user id a six-digit number
-        this.user_id = new_id.toString().padStart(6, "0");
-    }
-}
 
 class RobotLink {
     constructor() {
@@ -88,6 +71,7 @@ class RobotLeg {
 
 class RobotRepresentation {
     constructor() {
+        this.env = "";
         this.ver = 0;
         this.body_obj;
         this.body_id = 0;
@@ -104,6 +88,28 @@ class RobotRepresentation {
             this.legs[i].update_position(i, this.num_legs);
         this.dv = [];
         this.alt = false;
+
+        this.init_gene = new Array(100).fill(0.5); // Use a long enough gene
+
+        this.reset();
+    }
+
+    copy_leg(target_id, source_id) {
+        if (target_id == source_id)
+            return false;
+        let target_leg = this.legs[target_id];
+        let source_leg = this.legs[source_id];
+        // copy everything but position
+        target_leg.num_links = source_leg.num_links;
+        for (let i = 0; i < target_leg.num_links; ++i) {
+            target_leg.links[i].part_id = source_leg.links[i].part_id;
+            target_leg.links[i].link_length = source_leg.links[i].link_length;
+        }
+        return true;
+    }
+
+    reset() {
+        this.parse_dv(this.init_gene);
     }
 
     leg(idx) {
@@ -113,40 +119,76 @@ class RobotRepresentation {
             console.log("Error: leg idx exceeds total number of legs");
     }
 
+    update_leg_position() {
+        for (let i = 0; i < this.num_legs; ++i) {
+            this.legs[i].update_position(i, this.num_legs, this.alt);
+        }
+    }
+
     update_num_legs(new_num_legs) {
+        // there are already enough leg containers in this robot object
         this.num_legs = new_num_legs;
-        for (let i = 0; i < this.num_legs; ++i) {
-            this.legs[i].update_position(i, this.num_legs, this.alt);
-        }
+        this.update_leg_position();
     }
 
-    flip_legs() {
-        this.alt = !this.alt;
-        for (let i = 0; i < this.num_legs; ++i) {
-            this.legs[i].update_position(i, this.num_legs, this.alt);
-        }
+    update_leg_layout(new_alt) {
+        this.alt = new_alt;
+        this.update_leg_position();
     }
 
-    // map a number of range [min, max] to a double in [0, 1]
-    scale_down(raw, min, max) {
-        return (raw - min) / (max - min);
+    flip_legs() { this.update_leg_layout(!this.alt); }
+
+    // double2double maping is points to points, while int2double mapping is points to bins
+    // map a double of range [min, max] to a double in [0, 1]
+    scale_down_double(raw, min, max) { return (raw - min) / (max - min); }
+    // map an int of range [min, max] to an double in [0, 1)
+    // The returned number is placed at the center of each bin
+    scale_down_int(raw, min, max) { return (raw - min + 0.5) / (max - min + 1); }
+
+    // map a double of range [0, 1] to a double of [min, max]
+    scale_up_double(raw, min, max) { return raw * (max - min) + min; }
+    // map a double of range [0, 1) to an int of [min, max]
+    scale_up_int(raw, min, max) {
+        let ret = Math.floor(raw * (max - min + 1)) + min;
+        if (ret > max) // when raw >= 1
+            ret = max;
+        return ret;
     }
 
     // gen format: [body_id, body_x, body_y, body_z, num_legs, alt, leg_1, leg_2, ...]
     //     for each leg: [(leg_pos), num_links, link_1_id, link_1_scale]
     compile_dv() {
         this.dv.length = 0;
-        this.dv.push(this.scale_down(this.body_id, 0, num_body_parts - 1));
+        this.dv.push(this.scale_down_int(this.body_id, 0, num_body_parts - 1));
         for (let i = 0; i < robot.body_scales.length; ++i) // body scales
-            this.dv.push(this.scale_down(robot.body_scales[i], body_scale_range[0], body_scale_range[1]));
-        this.dv.push(this.scale_down(this.num_legs, allowed_num_legs[0], allowed_num_legs[allowed_num_legs.length - 1]));
+            this.dv.push(this.scale_down_double(robot.body_scales[i], body_scale_range[0], body_scale_range[1]));
+        this.dv.push(this.scale_down_int(this.num_legs, allowed_num_legs[0], allowed_num_legs[allowed_num_legs.length - 1]));
+        this.dv.push(robot.alt ? 1 : 0);
         for (let i = 0; i < this.num_legs; ++i) {
             let this_leg = this.leg(i);
             // this.dv.push(this_leg.position); // temp disable leg_pos
-            this.dv.push(this.scale_down(this_leg.num_links, min_num_links_per_leg, max_num_links_per_leg));
+            this.dv.push(this.scale_down_int(this_leg.num_links, min_num_links_per_leg, max_num_links_per_leg));
             for (let j = 0; j < this_leg.num_links; ++j) {
-                this.dv.push(this.scale_down(this_leg.link(j).part_id, 0, num_leg_parts - 1));
-                this.dv.push(this.scale_down(this_leg.link(j).link_length, link_length_range[0], link_length_range[1]));
+                this.dv.push(this.scale_down_int(this_leg.link(j).part_id, 0, num_leg_parts - 1));
+                this.dv.push(this.scale_down_double(this_leg.link(j).link_length, link_length_range[0], link_length_range[1]));
+            }
+        }
+    }
+
+    parse_dv(gene) {
+        let counter = 0;
+        this.body_id = this.scale_up_int(gene[counter++], 0, num_body_parts - 1);
+        for (let i = 0; i < this.body_scales.length; ++i) // body scales
+            this.body_scales[i] = this.scale_up_double(gene[counter++], body_scale_range[0], body_scale_range[1]);
+        this.update_num_legs(this.scale_up_int(gene[counter++], allowed_num_legs[0], allowed_num_legs[allowed_num_legs.length - 1]));
+        this.update_leg_layout(gene[counter++] > 0.5 ? true : false);
+        for (let i = 0; i < this.num_legs; ++i) {
+            let this_leg = this.leg(i);
+            // this_leg.position = gene[counter++]; // temp disable leg_pos
+            this_leg.num_links = this.scale_up_int(gene[counter++], min_num_links_per_leg, max_num_links_per_leg);
+            for (let j = 0; j < this_leg.num_links; ++j) {
+                this_leg.link(j).part_id = this.scale_up_int(gene[counter++], 0, num_leg_parts - 1);
+                this_leg.link(j).link_length = this.scale_up_double(gene[counter++], link_length_range[0], link_length_range[1]);
             }
         }
     }
@@ -203,6 +245,14 @@ class EnvironmentLibrary {
     constructor() {
         this.env_list = ["ground", "Sine2.obj", "Valley5.obj"];
     }
+
+    check_env_id(env_name) {
+        for (let i = 0; i < this.env_list.length; ++i) {
+            if (env_name == this.env_list[i])
+                return i;
+        }
+        return -1;
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -211,18 +261,11 @@ class EnvironmentLibrary {
 
 let config_panel_e = document.getElementById('RobotConfigPanel');
 let visual_panel_e = document.getElementById('RobotVisualPanel');
-
-// Meta
-let user_id_e     = document.getElementById('UserIDText');
-let gen_id_btn_e  = document.getElementById('GenUserIDButton');
-let user_gender_e = document.getElementById('UserGenderSelect');
-let user_age_e    = document.getElementById('UserAgeText');
-let user_major_e  = document.getElementById('UserMajorText');
-let user_degree_e = document.getElementById('UserDegreeText');
-let env_e         = document.getElementById('EnvSelect');
-let ver_e         = document.getElementById('VerSelect');
+let user_id_e      = document.getElementById('UserIDText');
 
 // Robot Config
+let env_e          = document.getElementById('EnvSelect');
+let ver_e          = document.getElementById('VerSelect');
 let body_id_e      = document.getElementById('BodyIdSelect');
 let body_x_e       = document.getElementById('BodyScaleXText');
 let body_x2_e      = document.getElementById('BodyScaleXRange');
@@ -239,11 +282,15 @@ let link_id_e      = document.getElementById('LinkIdSelect');
 let part_id_e      = document.getElementById('PartIdSelect');
 let link_length_e  = document.getElementById('LinkLengthText');
 let link_length2_e = document.getElementById('LinkLengthRange');
+let copy_leg_e     = document.getElementById('CopyLegSelect');
+let copy_leg_btn_e = document.getElementById('CopyLegButton');
 let flip_btn_e     = document.getElementById('FlipButton');
+let reset_btn_e    = document.getElementById('ResetButton');
 
 // IO
 let submit_btn_e   = document.getElementById('SubmitButton');
 let save_btn_e     = document.getElementById('SaveButton');
+let load_btn_e     = document.getElementById('LoadButton');
 
 ////////////////////////////////////////////////////////////////////////
 //                             Callbacks                              //
@@ -277,42 +324,17 @@ function onMouseClick(event) {
 
 function onUserIDTextChange(event) {
     var select = event.target;
-    meta_info.user_id = select.value;
-}
-
-function onUserGenderSelectChange(event) {
-    var select = event.target;
-    meta_info.user_gender = select.options[select.selectedIndex].text;
-}
-
-function onUserAgeTextChange(event) {
-    var select = event.target;
-    meta_info.user_age = select.value;
-}
-
-function onUserMajorTextChange(event) {
-    var select = event.target;
-    meta_info.user_major = select.value;
-}
-
-function onUserDegreeTextChange(event) {
-    var select = event.target;
-    meta_info.user_degree = select.value;
+    user_id = select.value;
 }
 
 function onEnvSelectChange(event) {
     var select = event.target;
-    meta_info.env = select.options[select.selectedIndex].text;
+    robot.env = select.options[select.selectedIndex].text;
 }
 
 function onVerSelectChange(event) {
     var select = event.target;
     robot.ver = select.value;
-}
-
-function onGenUserIDButtonClick(event) {
-    meta_info.generate_user_id();
-    user_id_e.value = meta_info.user_id;
 }
 
 function onBodyIdSelectChange(event) {
@@ -366,6 +388,7 @@ function onBodyScaleZRangeChange(event) {
 function onNumLegsSelectChange(event) {
     var select = event.target;
     robot.update_num_legs(parseInt(select.value))
+    resize_select(copy_leg_e, robot.num_legs);
     update_dropdown_lists();
     draw_robot();
 }
@@ -420,6 +443,13 @@ function onLinkLengthRangeChange(event) {
     // draw_robot();
 // }
 
+function onCopyLegButtonClick(event) {
+    if (robot.copy_leg(leg_id_e.value, copy_leg_e.value)) { // if copy happened
+        update_dropdown_lists();
+        draw_robot();
+    }
+}
+
 function onSubmitButtonClick(event) {
     export_robot();
 }
@@ -428,8 +458,39 @@ function onSaveButtonClick(event) {
     demo_write();
 }
 
+function onLoadButtonClick(event) {
+    let input = document.createElement('input');
+    input.type = 'file';
+    input.onchange = e => {
+        let file = e.target.files[0];
+        let reader = new FileReader();
+        reader.readAsText(file,'UTF-8');
+        reader.onload = readerEvent => {
+            let json_str = readerEvent.target.result;
+            let json_dict = JSON.parse(json_str);
+
+            user_id = json_dict.user_id;
+            robot.env = json_dict.environment;
+            robot.ver = json_dict.ver;
+            robot.parse_dv(json_dict.gene);
+
+            update_meta_display();
+            update_dropdown_lists();
+            draw_robot();
+        }
+    }
+    input.click();
+}
+
 function onFlipButtonClick(event) {
     robot.flip_legs();
+    draw_robot();
+}
+
+function onResetButtonClick(event) {
+    robot.reset();
+    update_meta_display();
+    update_dropdown_lists();
     draw_robot();
 }
 
@@ -456,17 +517,8 @@ function resize_select(select, new_size) {
 }
 
 function init_dropdown_lists() {
-    // User Info
-    user_id_e.value = meta_info.user_id;
+    user_id_e.value = user_id;
     user_id_e.addEventListener('change', onUserIDTextChange);
-    user_gender_e.value = meta_info.user_gender;
-    user_gender_e.addEventListener('change', onUserGenderSelectChange);
-    user_age_e.value = meta_info.user_age;
-    user_age_e.addEventListener('change', onUserAgeTextChange);
-    user_major_e.value = meta_info.user_major;
-    user_major_e.addEventListener('change', onUserMajorTextChange);
-    user_degree_e.value = meta_info.user_degree;
-    user_degree_e.addEventListener('change', onUserDegreeTextChange);
 
     // Environment Select
     for (let i = 0; i < env_lib.env_list.length; ++i) {
@@ -476,12 +528,10 @@ function init_dropdown_lists() {
         env_e.appendChild(opt);
     }
     env_e.addEventListener('change', onEnvSelectChange);
-    meta_info.env = env_e.options[env_e.selectedIndex].text;
-
-    // Gen ID Button
-    gen_id_btn_e.addEventListener('click', onGenUserIDButtonClick)
+    robot.env = env_e.options[env_e.selectedIndex].text;
 
     // Ver Select
+    resize_select(ver_e, max_ver + 1);
     ver_e.value = robot.ver;
     ver_e.addEventListener('change', onVerSelectChange);
 
@@ -507,6 +557,7 @@ function init_dropdown_lists() {
     // Body ID
     resize_select(body_id_e, num_body_parts);
     body_id_e.addEventListener('change', onBodyIdSelectChange);
+    body_id_e.value = robot.body_id;
 
     // Body Scale
     body_x_e.addEventListener('change', onBodyScaleXTextChange);
@@ -552,6 +603,10 @@ function init_dropdown_lists() {
     link_length2_e.max = link_length_range[1];
     link_length2_e.step = slider_step;
 
+    // Copy Leg
+    resize_select(copy_leg_e, robot.num_legs);
+    copy_leg_btn_e.addEventListener('click', onCopyLegButtonClick)
+
     // Leg Position
     // leg_pos_e.addEventListener('change', onLegPositionTextChange);
     // leg_pos2_e.addEventListener('change', onLegPositionRangeChange);
@@ -559,16 +614,23 @@ function init_dropdown_lists() {
     // leg_pos2_e.max = leg_pos_range[1];
     // leg_pos2_e.step = slider_step;
 
-    // Submit Button
+    // IO Buttons
     submit_btn_e.addEventListener('click', onSubmitButtonClick)
-
-    // Save Button
     save_btn_e.addEventListener('click', onSaveButtonClick)
+    load_btn_e.addEventListener('click', onLoadButtonClick)
 
-    // Flip Button
+    // Robot Config Buttons
     flip_btn_e.addEventListener('click', onFlipButtonClick)
+    reset_btn_e.addEventListener('click', onResetButtonClick)
 
     update_dropdown_lists();
+}
+
+function update_meta_display() {
+    user_id_e.value = user_id;
+    env_e.value = env_lib.check_env_id(robot.env);
+    ver_e.value = robot.ver;
+    num_legs_e.value = robot.num_legs.toString(); // num_legs only need auto update here
 }
 
 function update_dropdown_lists() {
@@ -696,22 +758,24 @@ function demo_write() {
 
     robot.compile_dv();
     let json_dict = {
-        user_id: meta_info.user_id,
-        user_gender: meta_info.user_gender,
-        user_age: meta_info.user_age,
-        user_major: meta_info.user_major,
-        user_degree: meta_info.user_degree,
-        environment: meta_info.env,
+        user_id: user_id,
+        environment: robot.env,
         ver: robot.ver,
         datetime: timestamp,
         gene: robot.dv
     };
+
     // this long command formats the generated json string and keeps array on the same line
-    let json_str = JSON.stringify(json_dict, function(k,v) { if(v instanceof Array) return JSON.stringify(v); return v; }, 2).replace(/\\/g, '') .replace(/\"\[/g, '[') .replace(/\]\"/g,']') .replace(/\"\{/g, '{') .replace(/\}\"/g,'}');
+    let json_str = JSON.stringify(json_dict, function(k,v) { if(v instanceof Array) return JSON.stringify(v); return v; }, 2)
+                   .replace(/\\/g, '')
+                   .replace(/\"\[/g, '[')
+                   .replace(/\]\"/g,']')
+                   .replace(/\"\{/g, '{')
+                   .replace(/\}\"/g,'}');
 
     let anchor = document.createElement('a');
     anchor.href = "data:application/octet-stream,"+encodeURIComponent(json_str);
-    anchor.download = meta_info.user_id.toString() + "_" + meta_info.env + "_" + robot.ver + '.txt';
+    anchor.download = "evogen_" + user_id.toString() + "_" + robot.env + "_" + robot.ver + '.txt';
     anchor.click();
 }
 
@@ -719,7 +783,7 @@ function demo_write() {
 //                           Main Function                            //
 ////////////////////////////////////////////////////////////////////////
 
-var meta_info = new MetaInfo();
+var user_id = "000000";
 var robot = new RobotRepresentation();
 var robo_lib = new RobogamiLibrary();
 var env_lib = new EnvironmentLibrary();
